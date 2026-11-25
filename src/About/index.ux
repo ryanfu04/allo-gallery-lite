@@ -1,0 +1,57 @@
+<template>
+  <div class="page" onswipe="onRootSwipe">
+    <div class="topbar center"><text class="title">关于</text></div>
+
+    <div class="logo column center">
+      <div class="logo-box center"><text class="logo-t">图</text></div>
+      <text class="app-name">Allo图库</text>
+      <text class="app-ver">v{{version}}</text>
+    </div>
+
+    <div class="info column">
+      <div class="inforow center"><text class="info-k">作者</text><text class="info-v">rafbark</text></div>
+      <div class="inforow center"><text class="info-k">合作</text><text class="info-v">Hy4 flash</text></div>
+      <div class="inforow center"><text class="info-k">版本</text><text class="info-v">{{version}}</text></div>
+      <div class="inforow center"><text class="info-k">设备</text><text class="info-v">REDMI Watch 6</text></div>
+    </div>
+
+    <div class="rbtn back-btn center" onclick="goBack"><text class="chev chev-shift">‹</text></div>
+  </div>
+</template>
+
+<style>
+  text { color: #ffffff; }
+  .column { flex-direction: column; }
+  .center { align-items: center; justify-content: center; text-align: center; }
+  .page { width: 432px; height: 514px; background-color: #000000; position: relative; overflow: hidden; }
+  .topbar { position: absolute; top: 30px; left: 40px; width: 352px; height: 44px; }
+  .title { font-size: 34px; font-weight: bold; color: #ffffff; }
+  .logo { position: absolute; top: 88px; left: 34px; width: 364px; height: 130px; }
+  .logo-box { width: 64px; height: 64px; border-radius: 16px; background-color: #0a84ff; }
+  .logo-t { font-size: 34px; font-weight: bold; color: #ffffff; }
+  .app-name { font-size: 24px; font-weight: bold; color: #ffffff; margin-top: 8px; }
+  .app-ver { font-size: 15px; color: #8e8e93; margin-top: 2px; }
+  .info { position: absolute; top: 228px; left: 34px; width: 364px; }
+  .inforow {
+    width: 364px; height: 50px; margin-bottom: 10px;
+    padding: 0 18px; border-radius: 14px; background-color: #1c1c1e;
+    justify-content: space-between;
+  }
+  .info-k { font-size: 17px; color: #8e8e93; }
+  .info-v { font-size: 17px; color: #ffffff; }
+  .rbtn { width: 72px; height: 72px; border-radius: 36px; background-color: rgba(40,40,44,0.42); }
+  .back-btn { position: absolute; bottom: 30px; left: 34px; }
+  .chev { font-size: 50px; color: #ffffff; text-align: center; }
+  .chev-shift { position: relative; left: -3px; }
+</style>
+
+<script>
+  import router from '@system.router'
+  export default {
+    private: { version: '1.0.1' },
+
+    goBack() { router.back() },
+    onRootSwipe(e) { if (e && e.direction === 'right') { this.goBack(); return true } return false },
+    onBackPress() { router.back(); return true }
+  }
+</script>

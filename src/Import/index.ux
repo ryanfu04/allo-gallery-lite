@@ -1,0 +1,162 @@
+<template>
+  <div class="page" onswipe="onRootSwipe">
+    <div class="topbar center"><text class="title">导入图片</text></div>
+
+    <div class="body column">
+      <div class="intro column">
+        <text class="intro-t">手机端选图，自动推送到手表</text>
+        <text class="intro-s">在 AstroBox 运行「Allo图库导入器」，点「选择图片」即可。</text>
+      </div>
+      <div class="hint center"><text class="hint-t">{{connText}}</text></div>
+    </div>
+
+    <div class="rbtn back-btn center" onclick="goBack"><text class="chev chev-shift">‹</text></div>
+  </div>
+</template>
+
+<style>
+  text { color: #ffffff; }
+  .column { flex-direction: column; }
+  .center { align-items: center; justify-content: center; text-align: center; }
+  .page { width: 432px; height: 514px; background-color: #000000; position: relative; }
+  .topbar { position: absolute; top: 30px; left: 40px; width: 352px; height: 44px; }
+  .title { font-size: 34px; font-weight: bold; color: #ffffff; }
+  .body { position: absolute; top: 150px; left: 34px; width: 364px; }
+  .intro {
+    width: 364px; padding: 22px 18px; margin-bottom: 18px;
+    border-radius: 18px; background-color: rgba(40,40,44,0.55);
+  }
+  .intro-t { font-size: 20px; font-weight: bold; color: #ffffff; }
+  .intro-s { font-size: 15px; color: #8e8e93; margin-top: 10px; }
+  .hint {
+    width: 364px; height: 44px; margin-top: 6px;
+    border-radius: 22px; background-color: rgba(10,132,255,0.2);
+  }
+  .hint-t { font-size: 16px; color: #0a84ff; }
+  .rbtn { width: 72px; height: 72px; border-radius: 36px; background-color: rgba(40,40,44,0.42); }
+  .back-btn { position: absolute; bottom: 26px; left: 34px; }
+  .chev { font-size: 50px; color: #ffffff; text-align: center; }
+  .chev-shift { position: relative; left: -3px; }
+</style>
+
+<script>
+  import router from '@system.router'
+  import file from '@system.file'
+  import interconnect from '@system.interconnect'
+  
+  const DIR = 'internal://files/gallery/'
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+  export default {
+    private: {
+      connText: '等待手机 AstroBox 连接…',
+      connect: null,
+      imported: 0,
+      busy: false,
+      _rx: null,
+      _seq: 0
+    },
+    onInit() {
+      const self = this
+      try {
+        this.connect = interconnect.instance()
+        this.connect.onopen = function () { self.connText = '已连接，去 AstroBox 选图吧' }
+        this.connect.onmessage = function (msg) { self.onMessage(msg) }
+      } catch (e) { this.connText = '通信不可用' }
+    },
+    onDestroy() {
+      if (this.connect) { this.connect.onopen = null; this.connect.onmessage = null }
+    },
+
+    /* 接收插件消息：兼容整图与分片 */
+    onMessage(msg) {
+      let raw = msg && msg.data ? msg.data : msg
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch (e) {} }
+      if (!raw || typeof raw !== 'object') return
+      if (raw.type === 'gallery_chunk') { this.onChunk(raw); return }
+      if (raw.type === 'image' && raw.data) { this.busy = true; this.writeImage(raw.name, raw.data, raw.keep === true) }
+    },
+
+    /* 分片重组 */
+    onChunk(msg) {
+      const total = parseInt(msg.total, 10) || 1
+      const idx = parseInt(msg.index, 10) || 0
+      const keep = msg.keep === true
+      const name = keep ? this.safeName(msg.name || '') : this.safeName(msg.name || ('img_' + Date.now() + '.png'))
+      if (!this._rx || this._rx.name !== name || this._rx.total !== total) {
+        this._rx = { name: name, total: total, keep: keep, parts: new Array(total), got: 0 }
+        // 只在开始接收时更新一次 UI；逐片更新会高频重绘导致小内存设备重启
+        this.connText = '正在接收图片，请勿操作…'
+        this.busy = true
+      }
+      if (idx < 0 || idx >= total) return
+      if (this._rx.parts[idx] === undefined) {
+        this._rx.parts[idx] = msg.data || ''
+        this._rx.got++
+      }
+      if (this._rx.got < total) return
+      const full = this._rx.parts.join('')
+      const doneName = this._rx.name
+      const doneKeep = this._rx.keep
+      this._rx = null
+      this.writeImage(doneName, full, doneKeep)
+    },
+
+    /* 生成唯一文件名：同名图片多次导入不覆盖、不合并 */
+    uniqueName(name) {
+      const raw = String(name || 'import.png')
+      const dot = raw.lastIndexOf('.')
+      const stem = dot > 0 ? raw.slice(0, dot) : raw
+      const ext = dot > 0 ? raw.slice(dot) : '.png'
+      const base = this.safeName(stem).slice(0, 24) || 'import'
+      this._seq = (this._seq || 0) + 1
+      return base + '_' + Date.now() + '_' + this._seq + ext
+    },
+
+    /* base64 解码写盘 */
+    writeImage(name, b64data, keep) {
+      // keep=true 时保留配对文件名（g/t + gid），不重新 uniqueName
+      const safe = keep ? this.safeName(name) : this.uniqueName(name)
+      const self = this
+      try {
+        const bytes = this.decodeBase64(b64data)
+        file.writeArrayBuffer({
+          uri: DIR + safe, buffer: bytes,
+          success: function () {
+            // 缩略图 t 前缀不计入张数，只统计大图
+            if (!(keep && safe.charAt(0) === 't')) self.imported++
+            self.busy = false
+            self.connText = '已导入 ' + self.imported + ' 张，返回图库查看'
+          },
+          fail: function () { self.busy = false; self.connText = '图片写入失败，请重试' }
+        })
+      } catch (e) { self.busy = false; self.connText = '图片数据解析失败' }
+    },
+
+    safeName(n) { return String(n).replace(/[^a-zA-Z0-9._]/g, '_').slice(0, 40) },
+
+    decodeBase64(b64) {
+      let str = String(b64).replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/')
+      const pad = str.length % 4
+      if (pad) str += '==='.slice(0, 4 - pad)
+      const len = str.length
+      const outLen = Math.floor(len * 3 / 4)
+      const out = new Uint8Array(outLen)
+      let p = 0
+      for (let i = 0; i < len; i += 4) {
+        const c1 = B64.indexOf(str.charAt(i))
+        const c2 = B64.indexOf(str.charAt(i + 1))
+        const c3 = str.charAt(i + 2) === '=' ? -1 : B64.indexOf(str.charAt(i + 2))
+        const c4 = str.charAt(i + 3) === '=' ? -1 : B64.indexOf(str.charAt(i + 3))
+        if (p < outLen) out[p++] = (c1 << 2) | (c2 >> 4)
+        if (p < outLen) out[p++] = ((c2 & 15) << 4) | (c3 >> 2)
+        if (p < outLen) out[p++] = ((c3 & 3) << 6) | c4
+      }
+      return out
+    },
+
+    goBack() { if (this.busy) return; router.back() },
+    onRootSwipe(e) { if (this.busy) return true; if (e && e.direction === 'right') { this.goBack(); return true } return false },
+    onBackPress() { if (this.busy) return true; router.back(); return true }
+  }
+</script>

@@ -1,0 +1,73 @@
+<template>
+  <div class="page" onswipe="onRootSwipe">
+
+    <div class="topbar"><text class="title">更多</text></div>
+
+    <!-- 固定菜单（不可滚动） -->
+    <div class="menu">
+      <div class="rowitem center" for="{{menus}}" onclick="onMenu($item.key)">
+        <text class="row-t">{{$item.label}}</text>
+        <text class="row-arrow">›</text>
+      </div>
+      <div class="rowitem center" onclick="onExit">
+        <text class="row-t row-danger">退出应用</text>
+        <text class="row-arrow exit-arrow">✕</text>
+      </div>
+    </div>
+
+    <text class="ver-t">Allo图库 v{{version}}</text>
+
+    <div class="rbtn back-btn center" onclick="goBack"><text class="chev chev-shift">‹</text></div>
+  </div>
+</template>
+
+<style>
+  text { color: #ffffff; }
+  .center { align-items: center; justify-content: center; text-align: center; }
+  .page { width: 432px; height: 514px; background-color: #000000; position: relative; overflow: hidden; }
+  /* 五层缩略图错位放大叠加天然模糊，不用 blur 滤镜 */
+  .topbar { position: absolute; top: 26px; left: 40px; width: 352px; height: 54px; justify-content: flex-start; align-items: center; }
+  .title { font-size: 42px; font-weight: bold; color: #ffffff; text-align: left; }
+  .menu { position: absolute; top: 88px; left: 34px; width: 364px; flex-direction: column; }
+  .rowitem {
+    width: 364px; height: 54px; margin-bottom: 6px;
+    padding: 0 20px; border-radius: 16px; background-color: rgba(28,28,30,0.85);
+    justify-content: space-between;
+  }
+  .row-t { font-size: 21px; color: #ffffff; }
+  .row-arrow { font-size: 32px; color: #8e8e93; }
+  .row-danger { color: #ff453a; }
+  .exit-arrow { font-size: 24px; color: #ff453a; }
+  .ver-t { position: absolute; bottom: 44px; right: 40px; font-size: 15px; color: #636366; text-align: right; }
+  .rbtn { width: 72px; height: 72px; border-radius: 36px; background-color: rgba(40,40,44,0.42); }
+  .back-btn { position: absolute; bottom: 30px; left: 34px; }
+  .chev { font-size: 50px; color: #ffffff; text-align: center; }
+  .chev-shift { position: relative; left: -3px; }
+</style>
+
+<script>
+  import router from '@system.router'
+  export default {
+    private: {
+      version: '1.0.1',
+      menus: [
+        { key: 'fav', label: '收藏图库' },
+        { key: 'import', label: '导入图片' },
+        { key: 'about', label: '关于' }
+      ]
+    },
+
+    onMenu(key) {
+      if (key === 'fav') router.push({ uri: '/Favorites' })
+      else if (key === 'import') router.push({ uri: '/Import' })
+      else if (key === 'about') router.push({ uri: '/About' })
+    },
+    onExit() {
+      try { if (this.$app && this.$app.exit) { this.$app.exit(); return } } catch (e) {}
+      router.back()
+    },
+    goBack() { router.back() },
+    onRootSwipe(e) { if (e && e.direction === 'right') { this.goBack(); return true } return false },
+    onBackPress() { router.back(); return true }
+  }
+</script>

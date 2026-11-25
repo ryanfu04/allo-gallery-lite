@@ -1,0 +1,10 @@
+{
+  "name": "vela-gallery-rw6",
+  "version": "1.5.0",
+  "scripts": {
+    "build": "aiot build"
+  },
+  "devDependencies": {
+    "aiot-toolkit": "^2.0.5"
+  }
+}

@@ -1,0 +1,966 @@
+<template>
+  <div class="page" onswipe="onRootSwipe">
+    <!-- 主页：标题 + 三列网格 + 底部固定操作区 -->
+    <div class="home" if="{{!viewing}}">
+      <div class="topbar"><text class="title">Allo图库</text></div>
+
+      <!-- 可上下滚动的三列网格：list + 展开行 + 直接传参（避开 dataset/transform/三元） -->
+      <list class="photolist" id="gridfocus" if="{{!viewing}}" onscroll="onGridScroll">
+        <list-item type="row" class="listrow" for="{{rows}}">
+          <div class="cell" onclick="onOpen($item.i0)" if="{{$item.n > 0}}">
+            <image class="thumb" src="{{$item.s0}}"></image>
+          </div>
+          <div class="cell" onclick="onOpen($item.i1)" if="{{$item.n > 1}}">
+            <image class="thumb" src="{{$item.s1}}"></image>
+          </div>
+          <div class="cell" onclick="onOpen($item.i2)" if="{{$item.n > 2}}">
+            <image class="thumb" src="{{$item.s2}}"></image>
+          </div>
+        </list-item>
+      </list>
+
+      <div class="empty column center" if="{{count === 0}}">
+        <text class="empty-t">暂无图片</text>
+        <text class="empty-s">点右下 + 导入</text>
+      </div>
+
+      <!-- 底部固定条：左下设置 / 右下加号 -->
+      <div class="home-bottom">
+        <div class="fab gray center" onclick="gotoSettings">
+          <div class="dots-row center">
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+        </div>
+        <div class="fab blue center" onclick="gotoImport"><text class="plus">+</text></div>
+      </div>
+    </div>
+
+    <!-- 浏览界面：图片层 + 悬浮UI层 -->
+    <div class="viewer" if="{{viewing}}">
+      <div class="img-stage center"
+           ontouchstart="onTouchStart"
+           ontouchmove="onTouchMove"
+           ontouchend="onTouchEnd">
+        <!-- 邻接图：仅横滑期间存在，紧贴主图左右两侧一起跟手移动，松手切图后销毁 -->
+        <image class="photo" src="{{peerSrc}}" if="{{peerVisible && !zoomed}}"
+               style="left:{{peerX}}px;top:{{panY}}px"></image>
+        <image class="photo" src="{{currentSrc}}" if="{{!zoomed}}"
+               style="left:{{panX}}px;top:{{panY}}px"></image>
+        <image class="photo-zoom" src="{{currentSrc}}" if="{{zoomed}}"
+               style="left:{{offX}}px;top:{{offY}}px"></image>
+      </div>
+
+      <!-- 左上：返回（放大圆形按钮，移入安全区） -->
+      <div class="rbtn back-btn center" onclick="onClose"><text class="chev chev-shift">‹</text></div>
+
+      <!-- 右上：更多（三点，横排三点） -->
+      <div class="rbtn more-btn center" onclick="toggleMenu">
+        <div class="dots-row center">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        </div>
+      </div>
+      <div class="more-menu column" if="{{menuOpen}}">
+        <div class="menu-item center" onclick="onMenuFav"><text class="menu-t">{{favBtnText}}</text></div>
+        <div class="menu-item center" onclick="onMenuZoom"><text class="menu-t">{{zoomBtn}}</text></div>
+        <div class="menu-item center" onclick="onMenuDelete"><text class="menu-t">删除</text></div>
+      </div>
+
+      <!-- 右下角：数量（无胶囊） -->
+      <text class="page-count" if="{{!menuOpen}}">{{pageNo}}</text>
+
+      <!-- 左下：上一张 / 下一张 -->
+      <div class="nav-pair" if="{{!menuOpen}}">
+        <div class="rbtn nav-btn center" onclick="onPrev"><text class="chev chev-shift">‹</text></div>
+        <div class="rbtn nav-btn center" onclick="onNext"><text class="chev">›</text></div>
+      </div>
+
+      <!-- 删除确认弹窗 -->
+      <div class="confirm-mask center" if="{{confirmDelete}}">
+        <div class="confirm-box column">
+          <text class="confirm-t">删除这张图片？</text>
+          <text class="confirm-s">删除后无法恢复</text>
+          <div class="confirm-btns">
+            <div class="confirm-btn cancel center" onclick="onCancelDelete"><text class="confirm-btn-t">取消</text></div>
+            <div class="confirm-btn danger center" onclick="onConfirmDelete"><text class="confirm-btn-t">删除</text></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 传图期间的全屏导入遮罩：显示导入态并锁定，防止切页丢失分片 -->
+    <div class="transfer-mask column center" if="{{busy && !viewing}}">
+      <div class="transfer-ring center"><text class="transfer-ico">↓</text></div>
+      <text class="transfer-t">正在导入图片</text>
+      <text class="transfer-s">请勿退出，完成后自动返回</text>
+    </div>
+
+    <!-- 全局 toast：置于 page 最顶层，避免被图片或列表遮挡 -->
+    <div class="statusbar center" if="{{showStatus}}">
+      <text class="status-txt">{{statusText}}</text>
+    </div>
+  </div>
+</template>
+
+<style>
+  text { color: #ffffff; }
+  .column { flex-direction: column; }
+  .center { align-items: center; justify-content: center; text-align: center; }
+
+  /* 固定页面 + 安全区：圆角矩形四角留白 */
+  .page {
+    width: 432px; height: 514px;
+    background-color: #000000;
+    position: relative;
+    overflow: hidden;
+  }
+  /* 五层缩略图错位放大叠加，靠像素插值天然模糊；不用 blur 滤镜 */
+  .home { width: 432px; height: 514px; position: relative; }
+
+  .topbar {
+    position: absolute; top: 26px; left: 40px;
+    width: 352px; height: 54px;
+    justify-content: flex-start; align-items: center;
+  }
+  .title { font-size: 42px; font-weight: bold; color: #ffffff; text-align: left; }
+
+  .statusbar {
+    position: absolute; top: 226px; left: 40px;
+    width: 352px; height: 46px;
+    border-radius: 23px; background-color: rgba(28,28,30,0.95);
+  }
+  .status-txt { font-size: 18px; color: #0a84ff; }
+
+  /* 可滚动三列网格：list 占据网格区，底部留操作条 */
+  .photolist {
+    position: absolute; top: 92px; left: 34px;
+    width: 364px; height: 350px;
+  }
+  .listrow { width: 364px; height: 122px; }
+  .cell {
+    width: 114px; height: 114px; margin: 3px;
+    align-items: center; justify-content: center;
+  }
+  /* 缩略图固定铺满正方形：114×114，裁掉边缘无黑边，最稳定 */
+  .thumb { width: 114px; height: 114px; border-radius: 18px; object-fit: cover; }
+  .empty { position: absolute; top: 200px; left: 40px; width: 352px; height: 120px; }
+  .empty-t { font-size: 24px; color: #8e8e93; }
+  .empty-s { font-size: 17px; color: #636366; margin-top: 8px; }
+
+  /* 底部固定操作条 */
+  .home-bottom {
+    position: absolute; bottom: 26px; left: 40px;
+    width: 352px; height: 72px;
+    flex-direction: row; align-items: center; justify-content: space-between;
+  }
+  .fab { width: 72px; height: 72px; border-radius: 36px; }
+  /* 主页按钮半透明，与浏览界面 rbtn 对齐 */
+  .fab.gray { background-color: rgba(40,40,44,0.42); }
+  .fab.blue { background-color: rgba(10,132,255,0.62); }
+  .plus { font-size: 52px; color: #ffffff; text-align: center; }
+  .dots-row { flex-direction: row; align-items: center; justify-content: center; }
+  .dot { width: 9px; height: 9px; border-radius: 5px; background-color: #e5e5ea; margin: 0 4px; }
+  .count-pill {
+    height: 42px; padding: 0 20px;
+    border-radius: 21px; background-color: rgba(28,28,30,0.85);
+  }
+  .count-txt { font-size: 20px; color: #ffffff; }
+
+  /* ===== 浏览界面 ===== */
+  .viewer { width: 432px; height: 514px; position: relative; background-color: #000000; }
+  .img-stage {
+    position: absolute; top: 0px; left: 0px;
+    width: 432px; height: 514px;
+    align-items: center; justify-content: center;
+  }
+  .photo { width: 432px; height: 514px; position: absolute; object-fit: contain; }
+  .photo-zoom { width: 864px; height: 1028px; position: absolute; object-fit: contain; }
+
+  /* 大圆形按钮，全部移入安全区；半透明让图片更多露出 */
+  .rbtn { width: 72px; height: 72px; border-radius: 36px; background-color: rgba(40,40,44,0.42); }
+  .back-btn { position: absolute; top: 34px; left: 34px; }
+  .more-btn { position: absolute; top: 34px; right: 34px; }
+  /* 尖括号靠父级 .center 的 flex 双向居中；字形基线本身偏下，用静态相对定位上移校正视觉中心 */
+  .chev { font-size: 50px; color: #ffffff; text-align: center; position: relative; top: -3px; }
+  .chev-shift { left: -3px; }
+
+  .more-menu {
+    position: absolute; top: 106px; right: 34px;
+    width: 150px; padding: 8px;
+    border-radius: 18px; background-color: rgba(28,28,30,0.72);
+  }
+  .menu-item { width: 134px; height: 56px; margin-bottom: 6px; border-radius: 14px; background-color: rgba(40,40,44,0.55); }
+  .menu-t { font-size: 19px; font-weight: bold; color: #ffffff; }
+
+  .page-count {
+    position: absolute; bottom: 40px; right: 40px;
+    font-size: 22px; font-weight: bold; color: #ffffff;
+    text-align: right;
+  }
+
+  .nav-pair { position: absolute; bottom: 30px; left: 34px; flex-direction: row; }
+  .nav-btn { margin-right: 10px; }
+
+  /* 删除确认弹窗 */
+  .confirm-mask {
+    position: absolute; top: 0px; left: 0px;
+    width: 432px; height: 514px;
+    background-color: rgba(0,0,0,0.72);
+  }
+  .confirm-box {
+    width: 320px; padding: 24px 20px 20px;
+    border-radius: 24px; background-color: #2c2c2e;
+  }
+  .confirm-t { font-size: 22px; font-weight: bold; color: #ffffff; text-align: center; }
+  .confirm-s { font-size: 15px; color: #8e8e93; margin-top: 8px; text-align: center; }
+  .confirm-btns { flex-direction: row; justify-content: space-between; margin-top: 22px; }
+  .confirm-btn {
+    width: 130px; height: 54px; border-radius: 16px;
+    background-color: rgba(118,118,128,0.75);
+  }
+  .confirm-btn-t { font-size: 19px; font-weight: bold; color: #ffffff; }
+  .confirm-btn.danger { background-color: rgba(255,69,58,0.92); }
+
+  /* 传图期间的全屏导入遮罩（主页接收场景） */
+  .transfer-mask {
+    position: absolute; top: 0px; left: 0px;
+    width: 432px; height: 514px;
+    background-color: rgba(0,0,0,0.92);
+  }
+  .transfer-ring {
+    width: 92px; height: 92px; border-radius: 46px;
+    background-color: #0a84ff; margin-bottom: 26px;
+  }
+  .transfer-ico { font-size: 54px; font-weight: bold; color: #ffffff; }
+  .transfer-t { font-size: 26px; font-weight: bold; color: #ffffff; }
+  .transfer-s { font-size: 16px; color: #8e8e93; margin-top: 10px; }
+</style>
+
+<script>
+  import router from '@system.router'
+  import file from '@system.file'
+  import interconnect from '@system.interconnect'
+
+  const DIR = 'internal://files/gallery/'
+  const FAV_FILE = 'internal://files/gallery/favorites.txt'
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  const ZW = 864, ZH = 1028
+  const SW = 432, SH = 514
+  // 列表窗口化：行高 122px，视口 350px≈3 行，上下各缓冲 2 行 → 一次最多约 7 行 ×3 张图解码
+  const ROW_H = 122
+  const WIN_BUFFER = 2
+  const VISIBLE_ROWS = 4
+
+  export default {
+    private: {
+      photos: [],
+      rows: [],
+      _rowsKey: '',
+      _winStart: -1,
+      _winEnd: -1,
+      count: 0,
+      countText: '0 / 0',
+      viewing: false,
+      viewIdx: 0,
+      currentSrc: '',
+      zoomed: false,
+      zoomBtn: '放大',
+      pageNo: '0 / 0',
+      offX: 0,
+      offY: 0,
+      panX: 0,
+      panY: 0,
+      menuOpen: false,
+      confirmDelete: false,
+      favBtnText: '收藏',
+      favNames: [],
+      showStatus: false,
+      statusText: '',
+      connect: null,
+      statusTimer: null,
+      busy: false,
+      _rx: null,
+      _seq: 0,
+      _loadSeq: 0,
+      _tx: 0, _ty: 0, _ox: 0, _oy: 0, _tt: 0,
+      _px: 0, _py: 0, _cx: 0, _cy: 0,
+      _dragMode: false, _dragTimer: null,
+      _lastTap: 0, _tapTimer: null, _panning: false,
+      _swipeDir: 0,  // 非放大态跟手横滑方向：-1 左滑(下一张) / 1 右滑(上一张) / 0 无
+      peerSrc: '',   // 邻接图地址（横滑跟手时短暂存在）
+      peerX: 0,      // 邻接图 left，紧贴主图左右一起位移
+      peerVisible: false,
+      _animTimer: null,   // 60fps 缓动动画定时器
+      _animTarget: -1     // 动画结束要切换到的图片索引；-1 表示仅回弹不切图
+    },
+
+    onInit() {
+      const builtin = ['/common/images/g1.png']
+      builtin.forEach((p) => {
+        this.photos = this.photos.concat([{ src: p, imported: false, name: '' }])
+      })
+      this.updateCount()
+      // 只由 onShow 负责 loadImported，避免与 onInit 并发调用导致重复追加
+      this.setupInterconnect()
+    },
+
+    /* 从导入页/设置页返回时，刷新已导入图片并重新接管 interconnect 回调 */
+    onShow() {
+      this.loadImported()
+      this.setupInterconnect()
+    },
+
+    onDestroy() {
+      if (this.connect) { this.connect.onmessage = null; }
+      if (this.statusTimer) { clearTimeout(this.statusTimer); this.statusTimer = null; }
+      if (this._tapTimer) { clearTimeout(this._tapTimer); this._tapTimer = null; }
+    },
+
+    /* 拦截返回：一律返回 true，阻止退出应用 */
+    onBackPress() {
+      if (this.busy) return true
+      if (this.confirmDelete) { this.confirmDelete = false; return true }
+      if (this.menuOpen) { this.menuOpen = false; return true }
+      if (this.viewing) {
+        if (this.menuOpen) { this.menuOpen = false }
+        else if (this.zoomed) { this.zoomToggle() }
+        else { this.viewing = false; this.peerVisible = false }
+      }
+      return true
+    },
+    /* 右滑手势捕获（尽力拦截系统右滑返回） */
+    onRootSwipe(e) {
+      if (e && e.direction === 'right') { return true }
+      return false
+    },
+
+    gotoImport() { if (this.busy) return; router.push({ uri: '/Import' }) },
+    gotoSettings() { if (this.busy) return; router.push({ uri: '/Settings' }) },
+
+    updateCount() {
+      this.count = this.photos.length
+      this.countText = this.count + ' / ' + this.count
+      if (!this.viewing) this.pageNo = '1 / ' + (this.count > 0 ? this.count : 0)
+      this.rebuildRows()
+    },
+
+    /* 把 photos 每 3 张展开成一行，供 list 三列网格渲染（直接传参，不用 dataset）。
+       窗口化：仅可见行±缓冲行的图片 src 有值，屏幕外行 src 置空，避免大量图片同时解码导致崩溃。
+       _winStart/_winEnd 为 -1 表示窗口未知（首次/退化），此时全部加载保证可用。 */
+    rebuildRows() {
+      const rows = []
+      const n = this.photos.length
+      const hasWindow = this._winStart >= 0 && this._winEnd >= this._winStart
+      for (let i = 0; i < n; i += 3) {
+        const rowIdx = i / 3
+        const inWindow = !hasWindow || (rowIdx >= this._winStart && rowIdx <= this._winEnd)
+        const row = { n: 0, i0: 0, i1: 0, i2: 0, s0: '', s1: '', s2: '' }
+        for (let j = 0; j < 3 && (i + j) < n; j++) {
+          const p = this.photos[i + j]
+          row['n'] = j + 1
+          row['i' + j] = i + j
+          // 窗口内用缩略图（小图秒开），窗口外置空不解码；内置图无 thumb 回退自身 src
+          row['s' + j] = inWindow ? (p.thumb || p.src) : ''
+        }
+        rows.push(row)
+      }
+      // 补足空行使内容高度始终超过 list 视口，保证图片少（三行以内）时也能上下滚动
+      const MIN_ROWS = 3
+      while (rows.length < MIN_ROWS) {
+        rows.push({ n: 0, i0: 0, i1: 0, i2: 0, s0: '', s1: '', s2: '' })
+      }
+      // 内容指纹：数据未变时不重新赋值 rows，避免 list 全量重绘造成滚动卡顿
+      let key = ''
+      for (let k = 0; k < rows.length; k++) {
+        const r = rows[k]
+        key += r.n + '|' + r.s0 + '|' + r.s1 + '|' + r.s2 + ';'
+      }
+      if (key !== this._rowsKey) {
+        this._rowsKey = key
+        this.rows = rows
+      }
+    },
+
+    /* 列表滚动回调：按 scrollY 计算可见行窗口，仅窗口变化时才重建（节流）。
+       scrollY 缺失或异常时清空窗口退化为全加载，保证不破坏可用性。 */
+    onGridScroll(e) {
+      if (!e || typeof e.scrollY !== 'number' || isNaN(e.scrollY)) {
+        if (this._winStart !== -1) { this._winStart = -1; this._winEnd = -1; this.rebuildRows() }
+        return
+      }
+      const y = Math.max(0, e.scrollY)
+      const start = Math.max(0, Math.floor(y / ROW_H) - WIN_BUFFER)
+      const end = start + VISIBLE_ROWS + WIN_BUFFER * 2
+      if (start === this._winStart && end === this._winEnd) return
+      this._winStart = start
+      this._winEnd = end
+      this.rebuildRows()
+    },
+
+    loadImported() {
+      const self = this
+      // 并发序号：仅最新一次加载生效。一张图=warm 缩略图+大图两次写盘，各自回调 loadImported，
+      // 加上 onShow 也可能触发；旧回调若仍追加就会把同一批图片重复叠加（导入一张变三张）。
+      const seq = (self._loadSeq || 0) + 1
+      self._loadSeq = seq
+      file.list({
+        uri: DIR,
+        success: function (res) {
+          if (seq !== self._loadSeq) return   // 丢弃过期回调，避免重复追加
+          // 先移除旧的「导入」项，再按目录全量重建（幂等）
+          const kept = []
+          for (let i = 0; i < self.photos.length; i++) {
+            if (!self.photos[i].imported) kept.push(self.photos[i])
+          }
+          self.photos = kept
+          const list = res.fileList || []
+          // 新版：t<gid>.png=缩略图（不单独成项），g<gid>.png=大图（成项并挂缩略图）
+          // 兼容旧版 t/g<gid>.jpg；旧格式/测试图按老逻辑单独成项，thumb 回退自身
+          const thumbs = {}   // gid -> 缩略图文件名
+          const fulls = []    // { name, gid }
+          const legacy = []   // 老格式文件名
+          list.forEach(function (f) {
+            const name = self.baseName(f.uri || f.name || '')
+            const low = name.toLowerCase()
+            if (low.indexOf('.png') === -1 && low.indexOf('.jpg') === -1 && low.indexOf('.jpeg') === -1) return
+            if (low.charAt(0) === 't' && /^t\d+\.(png|jpg)$/.test(low)) {
+              thumbs[low.slice(1).replace(/\.(png|jpg)$/, '')] = name
+            } else if (/^g\d+\.(png|jpg)$/.test(low)) {
+              fulls.push({ name: name, gid: low.slice(1).replace(/\.(png|jpg)$/, '') })
+            } else {
+              legacy.push(name)
+            }
+          })
+          // gid 是毫秒时间戳，按 gid 排序即导入先后，避免 file.list 乱序
+          fulls.sort(function (a, b) { return a.gid < b.gid ? -1 : (a.gid > b.gid ? 1 : 0) })
+          fulls.forEach(function (it) {
+            const tn = thumbs[it.gid]
+            self.photos = self.photos.concat([{
+              src: DIR + it.name,
+              thumb: tn ? (DIR + tn) : (DIR + it.name),
+              tname: tn || '',
+              imported: true,
+              name: it.name
+            }])
+          })
+          legacy.sort()
+          legacy.forEach(function (name) {
+            self.photos = self.photos.concat([{
+              src: DIR + name, thumb: DIR + name, tname: '', imported: true, name: name
+            }])
+          })
+          // 读出收藏清单（文件名集合），给每张图挂 fav 标记
+          self.applyFavorites(function () { self.updateCount() })
+        },
+        fail: function () {}
+      })
+    },
+
+    /* 收藏标识：导入图用文件名，内置图用其资源路径 */
+    favKey(p) {
+      if (!p) return ''
+      return p.imported ? p.name : p.src
+    },
+
+    /* 读取收藏清单文件，给 photos 标记 fav；回调保证顺序 */
+    applyFavorites(done) {
+      const self = this
+      file.readArrayBuffer({
+        uri: FAV_FILE,
+        success: function (res) {
+          const names = self.parseFav(res)
+          self.favNames = names
+          for (let i = 0; i < self.photos.length; i++) {
+            self.photos[i].fav = names.indexOf(self.favKey(self.photos[i])) >= 0
+          }
+          done()
+        },
+        fail: function () { self.favNames = []; done() }
+      })
+    },
+
+    /* 兼容 buffer / ArrayBuffer / 字符串多种返回形态，解析成文件名数组 */
+    parseFav(res) {
+      try {
+        let buf = res && (res.buffer || res.data || res)
+        let s = ''
+        if (typeof buf === 'string') { s = buf }
+        else if (buf && typeof buf.byteLength === 'number') {
+          const u8 = new Uint8Array(buf)
+          for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i])
+        } else { return [] }
+        const arr = JSON.parse(s)
+        return Array.isArray(arr) ? arr : []
+      } catch (e) { return [] }
+    },
+
+    baseName(u) { return String(u).split('/').pop() },
+
+    setupInterconnect() {
+      const self = this
+      try {
+        this.connect = interconnect.instance()
+        this.connect.onmessage = function (msg) {
+          let raw = msg && msg.data ? msg.data : msg
+          if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch (e) {} }
+          self.onPluginMessage(raw)
+        }
+        this.connect.onopen = function () { self.flashStatus('手机已连接，可导入图片') }
+      } catch (e) {}
+    },
+
+    hideBgForImport() {},
+    scheduleBgRestore() {},
+
+    onPluginMessage(msg) {
+      if (!msg || typeof msg !== 'object') return
+      if (msg.type === 'gallery_chunk') { this.onChunk(msg); return }
+      if (msg.type !== 'image' || !msg.data) return
+      this.busy = true
+      this.hideBgForImport()
+      this.writeImage(msg.name, msg.data, msg.keep === true)
+    },
+
+    onChunk(msg) {
+      const total = parseInt(msg.total, 10) || 1
+      const idx = parseInt(msg.index, 10) || 0
+      const keep = msg.keep === true
+      // keep=true 时保留插件生成的 g<gid>.jpg / t<gid>.jpg 配对名，只做字符净化
+      const name = keep ? this.safeName(msg.name || '') : this.safeName(msg.name || ('img_' + Date.now() + '.png'))
+      if (!this._rx || this._rx.name !== name || this._rx.total !== total) {
+        // 开始接收新图：锁定交互，防止用户操作叠加渲染导致 OOM 重启
+        this._rx = { name: name, total: total, keep: keep, parts: new Array(total), got: 0 }
+        this.busy = true
+        this.hideBgForImport()
+        // 传图开始：退出浏览/放大态释放大图内存，并临时移除十层壁纸，
+        // 避免背景图与新图同时解码造成内存峰值重启；回到主页显示导入遮罩
+        if (this.viewing) { this.viewing = false; this.zoomed = false; this.menuOpen = false; this.confirmDelete = false; this.peerVisible = false }
+      }
+      if (idx < 0 || idx >= total) return
+      if (this._rx.parts[idx] === undefined) { this._rx.parts[idx] = msg.data || ''; this._rx.got++ }
+      if (this._rx.got < total) return
+      const full = this._rx.parts.join('')
+      const doneName = this._rx.name
+      const doneKeep = this._rx.keep
+      this._rx = null
+      this.writeImage(doneName, full, doneKeep)
+    },
+
+    /* 生成唯一文件名：同名图片多次导入不覆盖、不合并 */
+    uniqueName(name) {
+      const raw = String(name || 'import.png')
+      const dot = raw.lastIndexOf('.')
+      const stem = dot > 0 ? raw.slice(0, dot) : raw
+      const ext = dot > 0 ? raw.slice(dot) : '.png'
+      const base = this.safeName(stem).slice(0, 24) || 'import'
+      this._seq = (this._seq || 0) + 1
+      return base + '_' + Date.now() + '_' + this._seq + ext
+    },
+
+    writeImage(name, b64data, keep) {
+      // keep=true（缩略图/大图配对）时保留原文件名，g/t + gid 已保证唯一
+      const safe = keep ? this.safeName(name) : this.uniqueName(name)
+      const low = safe.toLowerCase()
+      // 一张图分两次传输：缩略图 t<gid> 先到、大图 g<gid> 后到。
+      // loadImported 只把大图 g 当成图片项，t 不单独成项。若缩略图写盘也提示"已导入"
+      // 并刷新，就会出现"提示了但没图 → 提示消失 → 几秒后大图到了又提示一次才出图"。
+      // 因此缩略图静默落盘：不提示、不刷新、不解锁 busy、不恢复壁纸，
+      // 全部交给随后配对的大图写盘成功时统一处理，保证提示与出图同时发生。
+      const isThumb = keep && /^t\d+\.(png|jpg)$/.test(low)
+      const self = this
+      try {
+        const bytes = this.decodeBase64(b64data)
+        file.writeArrayBuffer({
+          uri: DIR + safe, buffer: bytes,
+          success: function () {
+            if (isThumb) return
+            self.loadImported()
+            self.busy = false
+            self.scheduleBgRestore()
+            self.flashStatus('已导入：' + safe)
+          },
+          fail: function () {
+            if (isThumb) return
+            self.busy = false; self.scheduleBgRestore(); self.flashStatus('图片写入失败')
+          }
+        })
+      } catch (e) {
+        if (isThumb) return
+        this.busy = false; this.scheduleBgRestore(); self.flashStatus('图片数据解析失败')
+      }
+    },
+
+    safeName(n) { return String(n).replace(/[^a-zA-Z0-9._]/g, '_').slice(0, 40) },
+
+    decodeBase64(b64) {
+      let str = String(b64).replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/')
+      const pad = str.length % 4
+      if (pad) str += '==='.slice(0, 4 - pad)
+      const len = str.length
+      const outLen = Math.floor(len * 3 / 4)
+      const out = new Uint8Array(outLen)
+      let p = 0
+      for (let i = 0; i < len; i += 4) {
+        const c1 = B64.indexOf(str.charAt(i))
+        const c2 = B64.indexOf(str.charAt(i + 1))
+        const c3 = str.charAt(i + 2) === '=' ? -1 : B64.indexOf(str.charAt(i + 2))
+        const c4 = str.charAt(i + 3) === '=' ? -1 : B64.indexOf(str.charAt(i + 3))
+        if (p < outLen) out[p++] = (c1 << 2) | (c2 >> 4)
+        if (p < outLen) out[p++] = ((c2 & 15) << 4) | (c3 >> 2)
+        if (p < outLen) out[p++] = ((c3 & 3) << 6) | c4
+      }
+      return out
+    },
+
+    onOpen(idx) {
+      if (this.busy) return
+      const i = parseInt(idx, 10)
+      if (isNaN(i) || i < 0 || i >= this.photos.length) return
+      this.openAt(i)
+    },
+
+    openAt(idx) {
+      if (this._animTimer) { clearTimeout(this._animTimer); this._animTimer = null }
+      this._animTarget = -1
+      this.viewIdx = idx
+      this.currentSrc = this.photos[idx].src
+      this.zoomed = false
+      this.zoomBtn = '放大'
+      this.panX = 0
+      this.panY = 0
+      this.peerVisible = false
+      this.pageNo = (idx + 1) + ' / ' + this.photos.length
+      this.menuOpen = false
+      this.confirmDelete = false
+      this.favBtnText = this.photos[idx].fav ? '取消收藏' : '收藏'
+      this.viewing = true
+    },
+
+    onClose() {
+      if (this.busy) return
+      if (this._animTimer) { clearTimeout(this._animTimer); this._animTimer = null }
+      this._animTarget = -1
+      this.viewing = false
+      this.menuOpen = false
+      this.peerVisible = false
+      this._swipeDir = 0
+    },
+
+    // 缓动引擎：仅插值 left/top（panX/panY/peerX），绝不触碰 width/height
+    // —— Vela image 对 width/height 动态插值会崩溃，对 left/top 插值安全。
+    // 用真实时间戳计算进度（而非固定步数），动画时长恒定、不受掉帧拖长；
+    // setTimeout 用最小间隔触发，让渲染管线满速跑，帧率取决于设备上限。
+    _animatePan(fromX, toX, fromY, toY, onDone) {
+      if (this._animTimer) { clearTimeout(this._animTimer); this._animTimer = null }
+      const self = this
+      const DURATION = 240
+      const start = Date.now()
+      function frame() {
+        const p = Math.min(1, (Date.now() - start) / DURATION)
+        const k = 1 - Math.pow(1 - p, 3)   // easeOutCubic 缓出
+        const x = Math.round(fromX + (toX - fromX) * k)
+        const y = Math.round(fromY + (toY - fromY) * k)
+        self.panX = x
+        self.panY = y
+        if (self.peerVisible) self.peerX = x + (self._swipeDir < 0 ? SW : -SW)
+        if (p < 1) {
+          self._animTimer = setTimeout(frame, 1)   // 尽可能高频，实际帧率由渲染能力决定
+        } else {
+          // 精确落到终点，避免时间戳跨过 1 时停在倒数第二帧
+          self.panX = toX
+          self.panY = toY
+          if (self.peerVisible) self.peerX = toX + (self._swipeDir < 0 ? SW : -SW)
+          self._animTimer = null
+          self._animTarget = -1
+          if (onDone) onDone()
+        }
+      }
+      this._animTimer = setTimeout(frame, 1)
+    },
+
+    // 无动画直接切换：供删除、动画结束后无痕提交使用
+    _commitView(idx) {
+      if (this.photos.length === 0) return
+      this.viewIdx = Math.max(0, Math.min(this.photos.length - 1, idx))
+      this.currentSrc = this.photos[this.viewIdx].src
+      this.pageNo = (this.viewIdx + 1) + ' / ' + this.photos.length
+      this.menuOpen = false
+      this.confirmDelete = false
+      this.favBtnText = this.photos[this.viewIdx].fav ? '取消收藏' : '收藏'
+      this.panX = 0
+      this.panY = 0
+      this.peerVisible = false
+      this._swipeDir = 0
+      if (this.zoomed) this.centerZoom()
+    },
+
+    setView(idx) {
+      if (this.busy) return
+      if (this.photos.length === 0) return
+      this._commitView(idx)
+    },
+
+    // 按钮翻页：临时把目标图作为邻接图放在屏外，缓动滑到居中后无痕提交
+    _slide(dir) {
+      if (this.busy) return
+      // 快速连点：先把上一次未落位的动画收敛到目标，再基于最新索引继续
+      if (this._animTimer) {
+        clearTimeout(this._animTimer)
+        this._animTimer = null
+        const pending = this._animTarget
+        this._animTarget = -1
+        if (pending >= 0) this._commitView(pending)
+        else { this.panX = 0; this.panY = 0; this.peerVisible = false }
+      }
+      const n = this.photos.length
+      if (n === 0 || this.zoomed || n < 2) return
+      const target = this.viewIdx + (dir < 0 ? 1 : -1)
+      if (target < 0 || target >= n) return   // 首尾边界：不循环，停住
+      const self = this
+      this._swipeDir = dir
+      this._animTarget = target
+      this.peerSrc = this.photos[target].src
+      this.peerX = dir < 0 ? SW : -SW
+      this.peerVisible = true
+      this._animatePan(0, dir < 0 ? -SW : SW, 0, 0, function () {
+        self._commitView(target)
+      })
+    },
+    onPrev() { this._slide(1) },
+    onNext() { this._slide(-1) },
+
+    centerZoom() {
+      this.offX = Math.floor((SW - ZW) / 2)
+      this.offY = Math.floor((SH - ZH) / 2)
+    },
+    zoomToggle() {
+      if (this.busy) return
+      this.zoomed = !this.zoomed
+      this.zoomBtn = this.zoomed ? '缩小' : '放大'
+      if (this.zoomed) this.centerZoom()
+    },
+    toggleMenu() { if (this.busy) return; this.menuOpen = !this.menuOpen },
+    onMenuZoom() { this.menuOpen = false; this.zoomToggle() },
+    onMenuDelete() { if (this.busy) return; this.menuOpen = false; this.confirmDelete = true },
+    onMenuFav() { if (this.busy) return; this.menuOpen = false; this.toggleFav() },
+
+    /* 收藏/取消收藏当前图片（内置图与导入图都可收藏） */
+    toggleFav() {
+      const p = this.photos[this.viewIdx]
+      const key = this.favKey(p)
+      if (!key) return
+      const list = this.favNames.slice()
+      const i = list.indexOf(key)
+      if (i >= 0) {
+        list.splice(i, 1)
+        p.fav = false
+        this.favBtnText = '收藏'
+        this.flashStatus('已取消收藏')
+      } else {
+        list.push(key)
+        p.fav = true
+        this.favBtnText = '取消收藏'
+        this.flashStatus('已收藏')
+      }
+      this.favNames = list
+      this.saveFav(list)
+    },
+
+    /* 把收藏文件名数组写成 UTF-8 字节串 */
+    saveFav(list) {
+      const self = this
+      const s = JSON.stringify(list || [])
+      const bytes = new Uint8Array(s.length)
+      for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i) & 0xff
+      file.writeArrayBuffer({
+        uri: FAV_FILE, buffer: bytes,
+        success: function () {},
+        fail: function () { self.flashStatus('收藏保存失败') }
+      })
+    },
+    onCancelDelete() { this.confirmDelete = false },
+    onConfirmDelete() { this.confirmDelete = false; this.deleteCurrent() },
+
+    deleteCurrent() {
+      if (this.busy) return
+      const p = this.photos[this.viewIdx]
+      if (!p) return
+      if (p.imported && p.name) {
+        file.delete({ uri: DIR + p.name, success: function () {}, fail: function () {} })
+        // 同时删除配对的缩略图
+        if (p.tname) file.delete({ uri: DIR + p.tname, success: function () {}, fail: function () {} })
+        // 若该图已收藏，从收藏清单移除
+        if (p.fav) {
+          const key = this.favKey(p)
+          const list = this.favNames.filter(function (n) { return n !== key })
+          this.favNames = list
+          this.saveFav(list)
+        }
+      }
+      this.photos.splice(this.viewIdx, 1)
+      this.updateCount()
+      if (this.photos.length === 0) { this.viewing = false; this.flashStatus('已删除，图库为空'); return }
+      if (this.viewIdx >= this.photos.length) this.viewIdx = this.photos.length - 1
+      this.setView(this.viewIdx)
+      this.flashStatus('已删除')
+    },
+
+    onTouchStart(e) {
+      if (this.busy) return
+      // 缓动进行中又被触摸：立即收敛到目标帧，避免停留在插值中间态
+      if (this._animTimer) {
+        clearTimeout(this._animTimer)
+        this._animTimer = null
+        const target = this._animTarget
+        this._animTarget = -1
+        if (target >= 0) this._commitView(target)
+        else { this.panX = 0; this.panY = 0 }
+        this.peerVisible = false
+        this._swipeDir = 0
+      }
+      try {
+        const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+        if (!t) return
+        this._tx = t.clientX; this._ty = t.clientY
+        this._ox = this.offX; this._oy = this.offY
+        this._px = this.panX; this._py = this.panY
+        this._tt = Date.now()
+        this._panning = false
+        this._dragMode = false
+        this._swipeDir = 0
+        // 长按 280ms 后进入拖动模式（普通图拖动），短按手势留给横滑切图/单击
+        const self = this
+        if (this._dragTimer) clearTimeout(this._dragTimer)
+        this._dragTimer = setTimeout(function () {
+          if (!self._panning) self._dragMode = true
+        }, 280)
+      } catch (err) {}
+    },
+
+    onTouchMove(e) {
+      if (this.busy) return
+      try {
+        const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+        if (!t) return
+        const dx = t.clientX - this._tx
+        const dy = t.clientY - this._ty
+        const moved = Math.abs(dx) > 8 || Math.abs(dy) > 8
+        if (this.zoomed) {
+          // 放大模式：直接拖动放大图（放大态无切图冲突）
+          if (moved) this._panning = true
+          let nx = this._ox + dx
+          let ny = this._oy + dy
+          if (nx > 0) nx = 0; if (nx < SW - ZW) nx = SW - ZW
+          if (ny > 0) ny = 0; if (ny < SH - ZH) ny = SH - ZH
+          this.offX = nx
+          this.offY = ny
+        } else if (this._dragMode) {
+          // 普通模式：仅长按进入拖动模式后才平移图片
+          if (moved) this._panning = true
+          let nx = this._px + dx
+          let ny = this._py + dy
+          if (nx > 90) nx = 90; if (nx < -90) nx = -90
+          if (ny > 110) ny = 110; if (ny < -110) ny = -110
+          this.panX = nx
+          this.panY = ny
+        } else if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          // 跟手横滑：主图 + 邻接图并排一起跟随手指（只改 left/top 插值，安全）
+          // 一旦判定为横滑，取消长按拖动定时器，避免中途变成拖动模式
+          if (this._dragTimer) { clearTimeout(this._dragTimer); this._dragTimer = null }
+          this._panning = true
+          const dir = dx < 0 ? -1 : 1   // -1 左滑看下一张，1 右滑看上一张
+          // 首次判定方向时准备邻接图：左滑取下一张贴右侧，右滑取上一张贴左侧
+          if (this._swipeDir !== dir) {
+            this._swipeDir = dir
+            const n = this.photos.length
+            let pi = this.viewIdx + (dir < 0 ? 1 : -1)
+            if (pi < 0 || pi >= n) {
+              this.peerVisible = false
+            } else {
+              this.peerSrc = this.photos[pi].src
+              this.peerVisible = true
+            }
+          }
+          let nx = dx
+          if (nx > SW) nx = SW; if (nx < -SW) nx = -SW
+          this.panX = nx
+          this.panY = this._py
+          // 邻接图紧贴主图：当前图在 nx，下一张在 nx+SW，上一张在 nx-SW
+          if (this.peerVisible) this.peerX = nx + (dir < 0 ? SW : -SW)
+        }
+        // 其余情况（纵向小移动/静止）：不平移，等待松手判定单击
+      } catch (err) {}
+    },
+
+    onTouchEnd(e) {
+      if (this.busy) return
+      if (this._dragTimer) { clearTimeout(this._dragTimer); this._dragTimer = null }
+      try {
+        const t = (e.changedTouches && e.changedTouches[0])
+        if (!t) return
+        const dx = t.clientX - this._tx
+        const dy = t.clientY - this._ty
+        if (this.zoomed) { if (!this._panning) this.handleTap(); return }
+        // 普通模式：长按拖动态 → 松手后保留在拖动位置，不回弹、不切图
+        if (this._dragMode) {
+          this._lastTap = 0
+          return
+        }
+        // 跟手横滑结束：用 60fps 缓动把整条"胶片"送到目标位，再无痕提交
+        if (this._swipeDir !== 0) {
+          const dir = this._swipeDir
+          const willSwitch = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.3
+          const startX = this.panX
+          const startY = this.panY
+          const self = this
+          if (willSwitch && this.peerVisible) {
+            // 邻接图（目标图）从屏外滑到居中，主图同步滑出，落位后无痕提交
+            const target = this.viewIdx + (dir < 0 ? 1 : -1)
+            this._animTarget = target
+            this._animatePan(startX, dir < 0 ? -SW : SW, startY, 0, function () {
+              self._commitView(target)
+            })
+          } else {
+            // 位移不足或已到首尾边界（无邻接图）：缓动回弹居中，不循环切图
+            this._animTarget = -1
+            this._animatePan(startX, 0, startY, 0, function () {
+              self.peerVisible = false
+              self._swipeDir = 0
+            })
+          }
+          this._lastTap = 0
+          return
+        }
+        // 未进入跟手横滑的快速横滑（极短距离但够阈值）：兼容切图
+        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+          if (dx < 0) this.onNext(); else this.onPrev()
+          this._lastTap = 0
+          return
+        }
+        this.handleTap()
+      } catch (err) {}
+    },
+
+    handleTap() {
+      if (this.busy) return
+      const now = Date.now()
+      if (now - this._lastTap < 320) {
+        if (this._tapTimer) { clearTimeout(this._tapTimer); this._tapTimer = null }
+        this._lastTap = 0
+        this.zoomToggle()
+      } else {
+        this._lastTap = now
+        const self = this
+        if (this._tapTimer) clearTimeout(this._tapTimer)
+        this._tapTimer = setTimeout(function () { self._tapTimer = null }, 320)
+      }
+    },
+
+    flashStatus(t) {
+      this.statusText = t
+      this.showStatus = true
+      if (this.statusTimer) clearTimeout(this.statusTimer)
+      const self = this
+      this.statusTimer = setTimeout(function () { self.showStatus = false }, 3000)
+    }
+  }
+</script>
