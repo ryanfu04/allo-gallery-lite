@@ -21,7 +21,7 @@ REDMI Watch 6 上的轻量图库快应用，通过 AstroBox 插件从手机推�
 
 | 版本 | 包名 | 配套插件 |
 |---|---|---|
-| Lite | `com.example.gallery.lite` | `Allo图库导入插件-Rust4-v4.2.4.abp` |
+| Lite | `com.allo.gallery.lite` | `Allo图库导入插件-Rust4-v4.8.1.abp` |
 
 插件对标准版、Lite、Pro 三个包名都做了投递兼容，装哪个版本都能收到图片。
 
@@ -29,8 +29,8 @@ REDMI Watch 6 上的轻量图库快应用，通过 AstroBox 插件从手机推�
 
 1. 用 [AstroBox](https://astrobox.online/) 连接手表。
 2. 安装 `dist/` 目录下的：
-   - `Allo图库Lite-RW6-v1.0.1.rpk`（手表端）
-   - `Allo图库导入插件-Rust4-v4.2.4.abp`（手机端插件）
+   - `Allo图库Lite-RW6-v1.0.2.rpk`（手表端）
+   - `Allo图库导入插件-Rust4-v4.8.1.abp`（手机端插件）
 3. 打开插件，点「选择图片」从手机挑图，图片会自动传到手表图库。
 
 > 源码在国内网络下也可用「表盘自定义工具」等第三方工具安装 rpk。

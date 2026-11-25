@@ -2,7 +2,7 @@
   <div class="page" onswipe="onRootSwipe">
     <!-- 主页：标题 + 三列网格 + 底部固定操作区 -->
     <div class="home" if="{{!viewing}}">
-      <div class="topbar"><text class="title">Allo图库</text></div>
+      <div class="topbar"><text class="title">Allo图库Lite</text></div>
 
       <!-- 可上下滚动的三列网格：list + 展开行 + 直接传参（避开 dataset/transform/三元） -->
       <list class="photolist" id="gridfocus" if="{{!viewing}}" onscroll="onGridScroll">

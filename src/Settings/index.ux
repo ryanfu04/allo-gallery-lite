@@ -15,7 +15,7 @@
       </div>
     </div>
 
-    <text class="ver-t">Allo图库 v{{version}}</text>
+    <text class="ver-t">Allo图库Lite v{{version}}</text>
 
     <div class="rbtn back-btn center" onclick="goBack"><text class="chev chev-shift">‹</text></div>
   </div>

@@ -1683,7 +1683,7 @@ export default function(global, globalThis, window, $app_exports$, $app_evaluate
                                                 classList: [
                                                     "title"
                                                 ],
-                                                value: "Allo图库"
+                                                value: "Allo图库Lite"
                                             }
                                         }, [])
                                     ]),

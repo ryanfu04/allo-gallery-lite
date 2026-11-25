@@ -464,7 +464,7 @@ export default function(global, globalThis, window, $app_exports$, $app_evaluate
                                     "ver-t"
                                 ],
                                 value: function() {
-                                    return "Allo图库 v" + _vm_.version;
+                                    return "Allo图库Lite v" + _vm_.version;
                                 }
                             }
                         }, []),

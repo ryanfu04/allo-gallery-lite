@@ -11,7 +11,7 @@ export default function(global, globalThis, window, $app_exports$, $app_evaluate
                 var __webpack_modules__ = {
                     "./src/manifest.json" (module) {
                         "use strict";
-                        module.exports = JSON.parse('{"package":"com.example.gallery.lite","name":"Allo图库Lite","icon":"/common/images/icon.png","versionName":"1.0.1","versionCode":2,"minAPILevel":1,"deviceTypeList":["watch"],"config":{"logLevel":"off","designWidth":432},"display":{"backgroundColor":"#000000"},"router":{"entry":"Index","pages":{"Index":{"component":"index","path":"/"},"Import":{"component":"index","path":"/Import"},"Settings":{"component":"index","path":"/Settings"},"Favorites":{"component":"index","path":"/Favorites"},"About":{"component":"index","path":"/About"}}},"features":[{"name":"system.interconnect"},{"name":"system.file"},{"name":"system.router"}]}');
+                        module.exports = JSON.parse('{"package":"com.allo.gallery.lite","name":"Allo图库Lite","icon":"/common/images/icon.png","versionName":"1.0.2","versionCode":3,"minAPILevel":1,"deviceTypeList":["watch"],"config":{"logLevel":"off","designWidth":432},"display":{"backgroundColor":"#000000"},"router":{"entry":"Index","pages":{"Index":{"component":"index","path":"/"},"Import":{"component":"index","path":"/Import"},"Settings":{"component":"index","path":"/Settings"},"Favorites":{"component":"index","path":"/Favorites"},"About":{"component":"index","path":"/About"}}},"features":[{"name":"system.interconnect"},{"name":"system.file"},{"name":"system.router"}]}');
                     }
                 };
                 var __webpack_module_cache__ = {};
